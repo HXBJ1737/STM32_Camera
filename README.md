@@ -7,3 +7,6 @@ main_v2.0.py 新增画板
 main_v3.0.py 新增视觉任务：颜色追踪
 
 当前 main.py = main_v3.0.py
+
+当前软件功能实现较为简陋、90%以上为AI Coding，请自行优化。
+
