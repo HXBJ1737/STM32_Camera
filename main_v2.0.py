@@ -1,11 +1,10 @@
-#author:恒星不见&ZhangJie
-#date：2025-07-10
+# author: 恒星不见&ZhangJie
+# date: 2025-08-13
 import sensor, image, time,screen
 import pyb
 import os
 from pyb import Timer
 import random
-import math
 
 class NonBlockingButton:
     def __init__(self, pin_name, debounce_time=20, timer=4, long_press_time=1000):
@@ -237,11 +236,8 @@ def main():
     mode = 0
     vh=0
     img_files=None
-    color_thresholds = []
-    blobscnt=0
     current_img = 0  # 当前显示的图片索引
     screen.init(rotation=3)
-
     is_VGA=0
     last_x=0    #上一次x坐标
     last_y=0    #上一次y坐标
@@ -264,17 +260,16 @@ def main():
             img_drawing_board.draw_string(55,45,'In Album mode, K0: Remove Picture ; K1: Next Picture ',scale=(1),color=(0,255,255),mono_space=False)
             img_drawing_board.draw_string(55,60,'In Draw mode,  K0: Take Picture ; K1: Clear  ',scale=(1),color=(0,255,255),mono_space=False)
             img_drawing_board.draw_string(55,75,'In ALL mode,  K2(short) : Back Index ',scale=(1),color=(0,255,255),mono_space=False)
-            img_drawing_board.draw_string(55,90,'OV5640 : K0(short) ; OV7725 or OV2640 : K0(long)',scale=(1),color=(255,255,150),mono_space=False)
-            img_drawing_board.draw_string(55,100,'Press K0 into Camera mode',scale=(2),color=(0,255,0),mono_space=False)
-            img_drawing_board.draw_string(55,120,'Press K1 into Album  mode',scale=(2),color=(0,255,0),mono_space=False)
-            img_drawing_board.draw_string(55,140,'Press K2 into  Draw   mode',scale=(2),color=(0,255,0),mono_space=False)
-            img_drawing_board.draw_string(55,160,'Press K1_Long into  Detect',scale=(2),color=(0,255,0),mono_space=False)
+            img_drawing_board.draw_string(55,95,'OV5640 : K0(short) ; OV7725 or OV2640 : K0(long)',scale=(1),color=(255,255,150),mono_space=False)
+            img_drawing_board.draw_string(55,110,'Press K0 into Camera mode',scale=(2),color=(0,255,0),mono_space=False)
+            img_drawing_board.draw_string(55,130,'Press K1 into Album  mode',scale=(2),color=(0,255,0),mono_space=False)
+            img_drawing_board.draw_string(55,150,'Press K2 into  Draw   mode',scale=(2),color=(0,255,0),mono_space=False)
             img_drawing_board.draw_rectangle(70,190,170,40,color=(255,255,255))
             img_drawing_board.draw_string(80,200,'Run time : '+convert_ms_to_hms(time.ticks_ms()),scale=(2),color=(0,100,255),mono_space=False)
             screen.display(img_drawing_board)
             if K0.is_short_pressed():
                 mode=1
-            elif K0.is_long_pressed():
+            if K0.is_long_pressed():
                 vh=1-vh
                 if vh:
                     sensor.set_vflip(True) # 垂直翻转
@@ -282,10 +277,8 @@ def main():
                 else:
                     sensor.set_vflip(False)
                     sensor.set_hmirror(False)
-                pyb.LED(3).on()
-                time.sleep(0.5)
-                pyb.LED(3).off()
-            elif K1.is_short_pressed():
+                mode=1
+            if K1.is_short_pressed():
                 current_img=0
                 img_files = [f for f in os.listdir(img_dir1) if f.lower().endswith('.jpg')]
                 img_files.sort()
@@ -295,12 +288,9 @@ def main():
                 img = image.Image("%s/%s" % (img_dir1, img_files[current_img]))
                 screen.display(img)
                 mode = 2
-            elif K2.is_short_pressed():
+            if K2.is_short_pressed():
                 img_drawing_board.draw_rectangle(0,0,320,240,fill=True,color=(255,255,255))
                 mode =3
-            elif K1.is_long_pressed():
-                mode=4
-
 
         while mode==1:
             img = sensor.snapshot() #获取感光器画面
@@ -398,161 +388,6 @@ def main():
             if K2.is_short_pressed():
                 mode = 0
 
-        while mode == 4:
-            img = sensor.snapshot()
-            clock.tick()
-
-            # 绘制中心十字准星
-            center_x, center_y = img.width() // 2, img.height() // 2
-            img.draw_cross(center_x, center_y, color=(255, 255, 255), size=15, thickness=2)
-            img.draw_circle(center_x, center_y, 20, color=(255, 255, 255), thickness=2)
-
-            # 显示模式信息
-            img.draw_string(10, 10, "K0: Add Color at Center", color=(0, 255, 0), scale=1)
-            img.draw_string(10, 25, "K1: Clear Colors", color=(0, 255, 0), scale=1)
-            img.draw_string(10, 40, "K2: Back to Index", color=(0, 255, 0), scale=1)
-            img.draw_string(10, 225, "FPS: %.1f" % clock.fps(), color=(255, 0, 0), scale=1)
-
-            # 颜色追踪阈值列表（LAB颜色空间）
-            # 格式: [(L Min, L Max, A Min, A Max, B Min, B Max), ...]
-
-
-            # 当前选中的目标blob
-            target_blob = None
-            nearest_distance = float('inf')
-
-            # K0: 添加中心区域颜色到追踪列表
-            if K0.is_short_pressed():
-                # 获取中心区域的颜色
-                roi_size = 16
-                x = max(0, center_x - roi_size // 2)
-                y = max(0, center_y - roi_size // 2)
-                width = min(roi_size, img.width() - x)
-                height = min(roi_size, img.height() - y)
-
-                # 使用get_statistics获取LAB颜色统计信息
-                stats = img.get_statistics(roi=(x, y, width, height))
-
-                # 获取LAB通道的平均值
-                l_avg = stats.l_mean()
-                a_avg = stats.a_mean()
-                b_avg = stats.b_mean()
-
-                # 设置LAB阈值范围
-                l_range = 20  # L通道范围
-                ab_range = 15  # A和B通道范围
-
-                new_threshold = (
-                    max(0, l_avg - l_range), min(100, l_avg + l_range),
-                    max(-128, a_avg - ab_range), min(127, a_avg + ab_range),
-                    max(-128, b_avg - ab_range), min(127, b_avg + ab_range)
-                )
-
-                color_thresholds.append(new_threshold)
-
-                # 显示反馈
-                img.draw_rectangle(x, y, width, height, color=(255, 0, 0), thickness=2)
-                img.draw_string(center_x - 40, center_y + 30, "Color Added!", color=(0, 255, 0), scale=1)
-                img.draw_string(10, 85, "Colors: {}".format(len(color_thresholds)), color=(255, 255, 255), scale=1)
-                img.draw_string(10, 100, "LAB: ({:.0f},{:.0f},{:.0f})".format(l_avg, a_avg, b_avg),
-                              color=(255, 255, 255), scale=1)
-
-                print("Added LAB threshold:", new_threshold)
-                pyb.LED(1).on()
-                time.sleep(0.3)
-                pyb.LED(1).off()
-
-            # K1: 清空颜色阈值列表
-            if K1.is_short_pressed():
-                color_thresholds = []
-                img.draw_string(center_x - 40, center_y + 30, "Colors Cleared!", color=(255, 0, 0), scale=1)
-                print("All color thresholds cleared")
-                pyb.LED(2).on()
-                time.sleep(0.3)
-                pyb.LED(2).off()
-                screen.display(img)
-                time.sleep(1)
-
-            # 执行多颜色斑点检测（使用LAB阈值）
-            if color_thresholds:
-                # 查找所有匹配的blob
-                blobs = img.find_blobs(color_thresholds,
-                                      pixels_threshold=100,
-                                      area_threshold=100,
-                                      merge=False)  # 不合并，保持单个blob
-
-                nearest_distance = float('inf')
-                target_blob = None
-
-                for blob in blobs:
-                    # 绘制blob信息
-                    img.draw_rectangle(blob.rect(), color=(0, 255, 0))
-                    img.draw_cross(blob.cx(), blob.cy(), color=(255, 0, 0))
-
-                    # 计算与中心的距离
-                    distance = math.sqrt((blob.cx() - center_x)**2 + (blob.cy() - center_y)**2)
-
-                    # 显示blob信息
-                    img.draw_string(blob.cx() + 5, blob.cy() - 15,
-                                  "D:{}".format(int(distance)),
-                                  color=(255, 255, 0), scale=1)
-
-                    # 找到距离中心最近的blob
-                    if distance < nearest_distance:
-                        nearest_distance = distance
-                        target_blob = blob
-
-                # 绘制最近的目标blob
-                if target_blob:
-                    img.draw_rectangle(target_blob.rect(), color=(255, 0, 0), thickness=3)
-                    img.draw_cross(target_blob.cx(), target_blob.cy(), color=(255, 255, 0), size=15, thickness=2)
-
-                    # 计算偏移量
-                    dx = target_blob.cx() - center_x
-                    dy = target_blob.cy() - center_y
-
-                    # 显示追踪信息
-                    img.draw_string(10, 70, "Target: DX:{:>3d} DY:{:>3d}".format(dx, dy),
-                                  color=(255, 255, 255), scale=1)
-                    img.draw_string(10, 85, "Distance: {:>3.0f}".format(nearest_distance),
-                                  color=(255, 255, 255), scale=1)
-
-                    # 方向指示
-                    if nearest_distance > 30:
-                        direction = ""
-                        if dy < -15: direction += "UP "
-                        elif dy > 15: direction += "DOWN "
-                        if dx < -15: direction += "LEFT "
-                        elif dx > 15: direction += "RIGHT "
-
-                        if direction:
-                            img.draw_string(center_x - 20, center_y - 40, direction, color=(0, 255, 255), scale=1)
-                    else:
-                        img.draw_string(center_x - 15, center_y - 40, "LOCKED", color=(0, 255, 0), scale=1)
-                        pyb.LED(3).on()
-                else:
-                    pyb.LED(3).off()
-                blobscnt=len(blobs)
-                # 显示检测到的blob数量
-                img.draw_string(10, 115, "Blobs found: {}".format(blobscnt),
-                              color=(255, 255, 255), scale=1)
-
-            else:
-                # 没有设置颜色阈值时的提示
-                img.draw_string(center_x - 60, center_y + 30, "Press K0 to add colors", color=(255, 255, 0), scale=1)
-                pyb.LED(3).off()
-
-            # 显示状态信息
-
-            status_text = "Colors: {} | Blobs: {}".format(len(color_thresholds), blobscnt)
-            img.draw_string(10, 210, status_text, color=(255, 255, 255), scale=1)
-
-            # K2: 返回主界面
-            if K2.is_short_pressed():
-                mode = 0
-                pyb.LED(3).off()
-
-            screen.display(img)
 
 
 
